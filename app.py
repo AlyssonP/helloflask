@@ -1,48 +1,63 @@
+"""
+    Código principal da aplicação.
+"""
 import sqlite3
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from Globals import DATABASE_NAME
-
 
 app = Flask(__name__)
 
-
 def get_db_connection():
-    conn = None
-    try:
-        conn = sqlite3.connect(DATABASE_NAME)
-        conn.row_factory = sqlite3.Row
-    except sqlite3.Error as e:
-        print('Não foi possível conectar')
+    """
+        Função que estabelece conexção ao banco de dados utilizando o contexto da aplicação.
+    """
+    db = getattr(g, "_database", None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE_NAME)
+        # Fazendo com o que as colunas do ResultSet possam ser acessado por índice ou por chave
+        db.row_factory = sqlite3.Row
+    return db
 
-    return conn
+@app.teardown_appcontext
+def close_connection(exception):
+    """
+        Função para finalização da conexão ao banco de dados.
+        caso o contexto seja destruído a conexão será encerrada.
+    """
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
 
+def query_db(query, args=(), one=False):
+    """
+        Função de consulta útil para casos repetitivos.
+    """
+    cur = get_db_connection().execute(query, args)
+    rv = cur.fetchall()
+    cur.close()
+    return (rv[0] if rv else None) if one else rv
 
 @app.route("/")
 def index():
+    """
+        Função do endpoint raiz da aplicação.
+    """
     return (jsonify({"versao": 1}), 200)
 
+def get_usuarios():
+    """
+        Função para o endpoint para listagem de usuários.
+    """
+    # Utilizando query_db para melhor consulta
+    resultset = query_db("SELECT * FROM tb_usuario")
+    usuarios_json = [{"id": linha["id"], "nome": linha["nome"], "nascimento": linha["nascimento"]}
+                for linha in resultset]
+    return usuarios_json
 
-def getUsuarios():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    resultset = cursor.execute('SELECT * FROM tb_usuario').fetchall()
-    usuarios = []
-    for linha in resultset:
-        id = linha[0]
-        nome = linha[1]
-        nascimento = linha[2]
-        # usuarioObj = Usuario(nome, nascimento)
-        usuarioDict = {
-            "id": id,
-            "nome": nome,
-            "nascimento": nascimento
-        }
-        usuarios.append(usuarioDict)
-    conn.close()
-    return usuarios
-
-
-def setUsuario(data):
+def set_usuario(data):
+    """
+        Função para o endpoint de criação de usuário no banco de dados.
+    """
     # Criação do usuário.
     nome = data.get('nome')
     nascimento = data.get('nascimento')
@@ -50,58 +65,59 @@ def setUsuario(data):
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        f'INSERT INTO tb_usuario(nome, nascimento) values ("{nome}", "{nascimento}")')
+        'INSERT INTO tb_usuario(nome, nascimento) VALUES (?, ?)',
+        (nome, nascimento)
+        )
     conn.commit()
-    id = cursor.lastrowid
-    data['id'] = id
+    data['id'] = cursor.lastrowid
     conn.close()
     # Retornar o usuário criado.
     return data
 
-
 @app.route("/usuarios", methods=['GET', 'POST'])
-def usuarios():
+def usuarios_metodos():
+    """
+        Função reponsável para gerenciamento de endpoits com métodos GET E POST de usuarios.
+    """
     if request.method == 'GET':
         # Listagem dos usuários
-        usuarios = getUsuarios()
+        usuarios = get_usuarios()
         return jsonify(usuarios), 200
     elif request.method == 'POST':
         # Recuperar dados da requisição: json.
         data = request.json
-        data = setUsuario(data)
+        data = set_usuario(data)
         return jsonify(data), 201
+    return None
 
-
-def getUsuarioById(id):
-    usuarioDict = None
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    linha = cursor.execute(
-        f'SELECT * FROM tb_usuario WHERE id = {id}').fetchone()
+def get_usuario_by_id(id_usuario):
+    """
+        Função para buscar usuário por id.
+    """
+    usuario_dict = None
+    linha = query_db("SELECT * FROM tb_usuario WHERE id = ?", [id_usuario], True)
     if linha is not None:
-        id = linha[0]
-        nome = linha[1]
-        nascimento = linha[2]
-        # usuarioObj = Usuario(nome, nascimento)
-        usuarioDict = {
-            "id": id,
-            "nome": nome,
-            "nascimento": nascimento
+        usuario_dict = {
+            "id": linha["id"],
+            "nome": linha["nome"],
+            "nascimento": linha["nascimento"]
         }
-    conn.close()
-    return usuarioDict
+    return usuario_dict
 
-
-def updateUsuario(id, data):
+def update_usuario(id_usuario, data):
+    """
+        Função para atualização de dados de usuário.
+    """
     # Criação do usuário.
     nome = data.get('nome')
     nascimento = data.get('nascimento')
-
     # Persistir os dados no banco.
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        'UPDATE tb_usuario SET nome = ?, nascimento = ? WHERE id = ?', (nome, nascimento, id))
+        'UPDATE tb_usuario SET nome = ?, nascimento = ? WHERE id = ?',
+        (nome, nascimento, id_usuario)
+        )
     conn.commit()
 
     rowupdate = cursor.rowcount
@@ -110,11 +126,13 @@ def updateUsuario(id, data):
     # Retornar a quantidade de linhas.
     return rowupdate
 
-
-@app.route("/usuarios/<int:id>", methods=['GET', 'DELETE', 'PUT'])
-def usuario(id):
+@app.route("/usuarios/<int:id_usuario>", methods=['GET', 'DELETE', 'PUT'])
+def usuario_metodos2(id_usuario):
+    """
+        Função reponsável para gerenciamento de endpoits com métodos GET, DELETE e PUT de usuarios.
+    """
     if request.method == 'GET':
-        usuario = getUsuarioById(id)
+        usuario = get_usuario_by_id(id_usuario)
         if usuario is not None:
             return jsonify(usuario), 200
         else:
@@ -122,7 +140,7 @@ def usuario(id):
     elif request.method == 'PUT':
         # Recuperar dados da requisição: json.
         data = request.json
-        rowupdate = updateUsuario(id, data)
+        rowupdate = update_usuario(id_usuario, data)
         if rowupdate != 0:
             return (data, 201)
         else:
