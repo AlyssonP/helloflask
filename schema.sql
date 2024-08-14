@@ -3,7 +3,9 @@ DROP TABLE IF EXISTS tb_usuario;
 CREATE TABLE tb_usuario (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nome TEXT NOT NULL,
-    nascimento DATE NOT NULL
+    nascimento DATE NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME
 );
 
 DROP TABLE IF EXISTS tb_produto;
@@ -12,6 +14,8 @@ CREATE TABLE tb_produto (
     nome TEXT NOT NULL,
     categoria_id INTEGER NOT NULL,
     setor_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME,
     foreign key (categoria_id) references tb_categoria(id),
     foreign key (setor_id) references tb_setor(id)
 );
