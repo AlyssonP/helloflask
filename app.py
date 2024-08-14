@@ -10,11 +10,14 @@ app = Flask(__name__)
 def get_db_connection():
     """
         Função que estabelece conexção ao banco de dados utilizando o contexto da aplicação.
+        
+        Inicialmente tenta obter a conexão de banco de dados armazenada no contexto global g.
+        Se caso a conexão já existir, ela é armazenada na variável db.
     """
     db = getattr(g, "_database", None)
     if db is None:
         db = g._database = sqlite3.connect(DATABASE_NAME)
-        # Fazendo com o que as colunas do ResultSet possam ser acessado por índice ou por chave
+        # Permite as colunas do ResultSet possam ser acessadas por índice ou por chave
         db.row_factory = sqlite3.Row
     return db
 
@@ -35,7 +38,9 @@ def query_db(query, args=(), one=False):
     cur = get_db_connection().execute(query, args)
     rv = cur.fetchall()
     cur.close()
-    return (rv[0] if rv else None) if one else rv
+    if one:
+        return rv[0] if rv else None
+    return rv
 
 @app.route("/")
 def index():
